@@ -1,0 +1,16 @@
+wildfly-configuration:
+  socket-binding-group:
+    standard-sockets:
+      remote-destination-outbound-socket-binding:
+        site1-loadbalancer:
+          host: mail-smtp
+          port: 6666
+      remote-destination-outbound-socket-binding:
+        jgroups-instance:
+          host: instance
+          port: 7600
+      remote-destination-outbound-socket-binding:
+        messaging-remote-amq1:
+          host: instance
+          port: 61616
+

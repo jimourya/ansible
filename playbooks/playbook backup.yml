@@ -1,0 +1,66 @@
+---
+- name: Ensure WildFly is install and running as a service
+  hosts: jboss
+  vars_files:
+    - vars/vars.yml
+  roles:
+    - wildfly_install
+    - wildfly_systemd
+  become: yes
+  tasks:
+    #- name: enable and start firewalld service
+    #  systemd:
+    #    name: firewalld
+    #    state: started
+    #    enabled: yes
+    #    - name: permit traffic in default zone on port 22/tcp
+    #  ansible.posix.authorized_key:
+    #    port: 22/tcp
+    #    permanent: yes
+    #    state: enabled
+    #    immediate: yes
+    - name: Upgrade the OS (apt-get dist-upgrade)
+      ansible.builtin.apt:
+         upgrade: dist
+      become: yes     
+
+    - name: Run the equivalent of "apt-get update" as a separate step
+      ansible.builtin.apt:
+         update_cache: yes
+      become: yes     
+    - name: Install Python 3 and pip (for Debian/Ubuntu-based systems)
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-apt # Required for apt module functionality
+        state: present
+        update_cache: true
+      become: yes    
+      when: ansible_os_family == "Debian"
+    - name: Ensure iproute2 package is installed
+      ansible.builtin.package:
+        name: iproute2
+        state: present
+        update_cache: yes
+      become: true # Use 'become: true' to ensure elevated privileges 
+    - name: Install Python 3 and pip (for RedHat/CentOS/Fedora-based systems)
+      ansible.builtin.dnf:
+        name:
+          - python3
+          - python3-pip
+        state: present
+      become: yes    
+      when: ansible_os_family == "RedHat"
+ 
+    - name: Install second driver with wildfly_driver role
+      ansible.builtin.include_role:
+        name: wildfly_driver
+      when: jdbc_drivers is defined and jdbc_drivers | length > 0
+      vars:
+        wildfly_driver_module_name: "{{ item.name }}"
+        wildfly_driver_version: "{{ item.version }}"
+        wildfly_driver_jar_filename: "{{ item.jar_file }}"
+        wildfly_driver_jar_url: "{{ item.url }}"
+      loop: "{{ jdbc_drivers }}"
+        

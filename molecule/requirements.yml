@@ -1,0 +1,5 @@
+---
+collections:
+  - name: middleware_automation.common
+  - name: ansible.posix
+  - name: community.docker

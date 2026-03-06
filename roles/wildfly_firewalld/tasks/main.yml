@@ -1,0 +1,6 @@
+---
+- name: "Includes tasks required to setup firewalld"
+  ansible.builtin.include_tasks: firewalld.yml
+
+- name: "Includes tasks related to firewalld rules"
+  ansible.builtin.include_tasks: rules.yml

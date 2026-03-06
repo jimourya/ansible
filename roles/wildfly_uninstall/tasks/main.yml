@@ -1,0 +1,59 @@
+---
+- name: Check arguments
+  ansible.builtin.assert:
+    that:
+      - wildfly_uninstall_service_name is defined
+      - wildfly_uninstall_home is defined
+    quiet: true
+
+- name: "Ensure privileges escalation is performed if needed: {{ wildfly_uninstall_require_privileges_escalation }}"
+  become: "{{ wildfly_uninstall_require_privileges_escalation }}"
+  block:
+    - name: "Ensure systemd service associated to {{ wildfly_uninstall_service_name }}"
+      ansible.builtin.include_tasks: service.yml
+
+    - name: "Delete server home directory ({{ wildfly_uninstall_home }})."
+      ansible.builtin.file:
+        state: absent
+        path: "{{ wildfly_uninstall_home }}"
+      when:
+        - wildfly_uninstall_home
+
+    - name: "Delete systemd service file ({{ wildfly_uninstall_systemd_service_conf_file }})."
+      ansible.builtin.file:
+        state: absent
+        path: "{{ wildfly_uninstall_systemd_service_conf_file }}"
+      when:
+        - wildfly_uninstall_systemd_service_conf_file
+      notify:
+        - "Systemd Daemon Reload"
+
+    - name: "Delete systemd env file ({{ wildfly_uninstall_systemd_service_file }})."
+      ansible.builtin.file:
+        state: absent
+        path: "{{ wildfly_uninstall_systemd_service_file }}"
+      when:
+        - wildfly_uninstall_systemd_service_file
+      notify:
+        - "Systemd Daemon Reload"
+
+    - name: "Delete user - if requested {{ wildfly_uninstall_delete_username }}"
+      ansible.builtin.user:
+        state: absent
+        name: "{{ wildfly_uninstall_delete_username }}"
+      when:
+        - wildfly_uninstall_delete_user is defined and (wildfly_uninstall_delete_user | bool )
+
+    - name: "Delete user - if requested {{ wildfly_uninstall_delete_group }}"
+      ansible.builtin.group:
+        state: absent
+        name: "{{ wildfly_uninstall_delete_groupname }}"
+      when:
+        - wildfly_uninstall_delete_group is defined and (wildfly_uninstall_delete_group | bool )
+
+    - name: "Delete archive (if path provided) {{ wildfly_uninstall_path_to_archive }}"
+      ansible.builtin.file:
+        path: "{{ wildfly_uninstall_path_to_archive }}"
+        state: absent
+      when:
+        - wildfly_uninstall_path_to_archive is defined

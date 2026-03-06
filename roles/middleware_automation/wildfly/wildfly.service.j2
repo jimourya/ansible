@@ -1,0 +1,21 @@
+
+[Unit]
+Description=WildFly Application Server
+After=network.target
+
+[Service]
+Type=simple
+User={{ wildfly_user }}
+Group={{ wildfly_group }}
+ExecStart={{ wildfly_symlink }}/bin/standalone.sh -b {{ wildfly_bind_address }} -bmanagement {{ wildfly_bind_address }} -Djboss.http.port={{ wildfly_http_port }} -Djboss.management.http.port={{ wildfly_mgmt_port }}
+ExecStop=/bin/kill -TERM $MAINPID
+
+Environment=JBOSS_HOME={{ wildfly_symlink }}
+Restart=on-failure
+LimitNOFILE=65535
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,16 @@
+- name: Install Nginx on web servers
+  hosts: jboss
+  become: true # Run tasks with sudo privileges
+  tasks:
+    - name: Ensure nginx is at the latest version
+      ansible.builtin.apt: # Use the apt module for Debian/Ubuntu systems
+        name: nginx
+        state: latest
+      notify:
+        - Restart nginx
+
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted

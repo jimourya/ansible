@@ -1,0 +1,11 @@
+---
+- name: "Uninstall Wildlfy from target"
+  hosts: instance
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  roles:
+    - name: wildfly_uninstall
+  post_tasks:
+    - name: "Flush handlers to ensure they are executed"
+      ansible.builtin.meta: flush_handlers

@@ -1,0 +1,58 @@
+---
+- name: Check arguments
+  ansible.builtin.assert:
+    that:
+      - wildfly_systemd is defined
+      - wildfly_systemd.home is defined
+      - wildfly_systemd.user is defined
+      - wildfly_systemd.group is defined
+    quiet: true
+
+- name: "Validate node identifier length"
+  ansible.builtin.assert:
+    that:
+      - wildfly_node_id | length <= 23
+    quiet: True
+    fail_msg: "The node ID in variable wildfly_node_id cannot exceed 23 characters length"
+
+- name: "Ensure that version is correct for yaml config extension"
+  ansible.builtin.include_tasks: yml_config_version_prereq.yml
+  when: wildfly_enable_yml_config
+
+- name: "Ensure required local user and group exists."
+  ansible.builtin.include_role:
+    name: wildfly_install
+    tasks_from: user.yml
+
+- name: 'Check if PID directory exists'
+  become: "{{ wildfly_install_requires_become | default(true) }}"
+  ansible.builtin.stat:
+    path: "{{ wildfly_systemd.selinux.pid_path }}"
+  register: pid_directory
+
+- name: 'Create PID directory path if not exists'
+  become: "{{ wildfly_install_requires_become | default(true) }}"
+  ansible.builtin.file:
+    path: "{{ wildfly_systemd.selinux.pid_path }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ wildfly_systemd.user }}"
+    group: "{{ wildfly_systemd.group }}"
+    selevel: s0
+    serole: object_r
+    setype: var_run_t
+    seuser: system_u
+  when: not pid_directory.stat.exists
+  notify: exec_restorecon
+
+- name: "Ensure server configuration and systemd configuration are set"
+  ansible.builtin.include_tasks: systemd.yml
+  vars:
+    basedir: "{{ wildfly_basedir_prefix | default(wildfly_systemd.home) }}/standalone"
+
+- name: "Ensure server's apps are deployed"
+  ansible.builtin.include_tasks: apps.yml
+  vars:
+    wildfly_basedir: "{{ wildfly_basedir_prefix | default(wildfly_systemd.home) }}/standalone"
+  when:
+    - wildfly_apps is defined and wildfly_apps | length > 0

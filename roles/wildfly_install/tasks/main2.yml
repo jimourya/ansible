@@ -1,0 +1,122 @@
+
+---
+- name: Ensure packages
+  package:
+    name: "{{ item }}"
+    state: present
+  loop: >-
+    {{
+      (ansible_os_family == 'RedHat') |
+      ternary(['java-11-openjdk-headless','tar','unzip','gzip','policycoreutils-python-utils'],
+              ['openjdk-11-jre-headless','tar','unzip','gzip','policycoreutils-python-utils'])
+    }}
+  ignore_errors: true
+
+- name: Ensure firewalld on RHEL
+  package:
+    name: firewalld
+    state: present
+  when: open_firewall and ansible_os_family == 'RedHat'
+
+- name: Start and enable firewalld
+  service:
+    name: firewalld
+    state: started
+    enabled: true
+  when: open_firewall and ansible_os_family == 'RedHat'
+
+- name: Create group
+  group:
+    name: "{{ wildfly_group }}"
+    system: true
+
+- name: Create user
+  user:
+    name: "{{ wildfly_user }}"
+    group: "{{ wildfly_group }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+ name: Create install dir
+  file:
+    path: "{{ wildfly_install_dir }}"
+    state: directory
+    owner: "{{ wildfly_user }}"
+    group: "{{ wildfly_group }}"
+    mode: "0755"
+
+- name: Download archive
+  get_url:
+    url: "{{ wildfly_archive_url }}"
+    dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+    mode: "0644"
+   
+checksum: "{{ wildfly_checksum | default(omit) }}"
+
+- name: Extract
+  unarchive:
+    src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+    dest: "{{ wildfly_install_dir }}"
+    remote_src: true
+    creates: "{{ wildfly_home }}"
+  notify: fix perms
+
+- name: Symlink current
+  file:
+    src: "{{ wildfly_home }}"
+   
+dest: "{{ wildfly_symlink }}"
+    state: link
+    force: true
+
+- name: Install systemd service
+  template:
+    src: wildfly.service.j2
+    dest: /etc/systemd/system/{{ wildfly_service_name }}.service
+  notify:
+    - systemd daemon-reload
+    - restart wildfly
+
+- name: Open firewall (RHEL)
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - "{{ wildfly_http_port }}"
+    - "{{ wildfly_mgmt_port }}"
+    - "{{ wildfly_https_port }}"
+  when: open_firewall and ansible_os_family == 'RedHat'
+
+- name: Open firewall (Debian)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ wildfly_http_port }}"
+    - "{{ wildfly_mgmt_port }}"
+    - "{{ wildfly_https_port }}"
+  when: open_firewall and ansible_os_family == 'Debian'
+
+- name: Enable and start service
+  service:
+    name: "{{ wildfly_service_name }}"
+    enabled: true
+    state: started
+
+- name: Create management user
+  command: >
+    {{ wildfly_symlink }}/bin/add-user.sh
+    -u {{ mgmt_username }}
+    -p {{ mgmt_password }}
+    -g "admin"
+    -s
+  args: 
+    creates: "{{ wildfly_symlink }}/standalone/configuration/mgmt-users.properties"
+  when: create_mgmt_user
+  notify: restart wildfly
+
+

@@ -1,0 +1,20 @@
+[all:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=no' 
+
+[localhost]
+20.51.169.27  ssh_port=22 ansible_user=dhananjay ansible_password=Dhanuki@1234
+
+[jboss_servers]
+jboss ansible_ssh_host=20.51.169.27  ansible_ssh_port=22 ansible_user=dhananjay ansible_password=Dhanuki@1234
+
+[webservers]
+web1 ansible_host=20.51.169.27
+
+
+[jboss]
+jboss01 ansible_host=10.0.0.10
+
+[jboss:vars]
+ansible_user=dhananjay
+ansible_become=true
+

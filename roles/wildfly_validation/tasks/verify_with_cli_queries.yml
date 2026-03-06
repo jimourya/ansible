@@ -1,0 +1,75 @@
+---
+- name: "Ensure required parameters are provided."
+  ansible.builtin.assert:
+    that:
+      - validation_query is defined
+      - wildfly_home is defined
+      - wildfly_controller_port is defined
+    quiet: true
+    fail_msg: "Missing required parameters"
+
+- name: "Use CLI query to validate service state: {{ validation_query }}"
+  ansible.builtin.include_role:
+    name: wildfly_utils
+    tasks_from: jboss_cli.yml
+  vars:
+    jboss_cli_query: "'{{ validation_query }}'"
+    jboss_home: "{{ wildfly_home }}"
+    jboss_cli_controller_port: "{{ wildfly_controller_port }}"
+
+- name: "Validate CLI query was successful"
+  ansible.builtin.assert:
+    that:
+      - cli_result is defined
+      - cli_result.rc is defined
+      - cli_result.rc == 0
+      - cli_result.stdout_lines is defined
+    quiet: true
+    fail_msg: "Fail to validate state of server using CLI query: {{ validation_query }}. Server may not be functional!"
+
+- name: "Transform output to JSON"
+  ansible.builtin.set_fact:
+    query_result: "{{ cli_result.stdout_lines | join('\n') | from_json }}"
+
+- name: "Display transformed result"
+  ansible.builtin.debug:
+    var: query_result
+  when:
+    - wildfly_validation_debug is defined
+
+- name: "Check that query was successfully performed."
+  ansible.builtin.assert:
+    that:
+      - query_result is defined
+      - query_result.result is defined
+      - query_result.outcome is defined
+      - query_result.outcome == "success"
+    quiet: true
+    fail_msg: "CLI query was not successful: {{ validation_query }}, server may not be functionnal!"
+
+- name: "Check that query result is not undefined."
+  ansible.builtin.assert:
+    that:
+      - query_result.result | type_debug | string != "NoneType"
+    quiet: true
+    fail_msg: "CLI query was not successful: {{ validation_query }}, server may not be functionnal!"
+  when:
+    - expected_result_undefined is defined and not expected_result_undefined
+
+- name: "Check that query result is same as expected value."
+  ansible.builtin.assert:
+    that:
+      - query_result.result == expected_result
+    quiet: true
+    fail_msg: "CLI query was not successful: {{ validation_query }}, server may not be functionnal!"
+  when:
+    - expected_result is defined
+
+- name: "Check that query result is undefined."
+  ansible.builtin.assert:
+    that:
+      - query_result.result | type_debug | string == "NoneType"
+    quiet: true
+    fail_msg: "CLI query was not successful: {{ validation_query }}, server may not be functionnal!"
+  when:
+    - expected_result_undefined is defined and expected_result_undefined

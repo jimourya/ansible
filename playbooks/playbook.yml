@@ -1,0 +1,367 @@
+---
+- name: Ensure WildFly is install and running as a service
+  hosts: jboss_servers
+  remote_user: dhananjay
+  become: yes
+    #  become_method: sudo
+  vars:
+    wildfly_version: 31.0.1.Final
+    wildfly_user: jboss 
+    wildfly_group: jboss
+      #    remote_user: dhananjay
+    ansible_sudo_pass: "Dhanuki@1234"
+    wildfly_install_dir: /opt/wildfly/
+    wildfly_home: /opt/wildfly/wildfly-{{ wildfly_version }}
+    wildfly_symlink: /opt/wildfly/current
+    wildfly_service_name: wildfly
+    wildfly_archive_url: https://github.com/wildfly/wildfly/releases/download/{{
+      wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz
+    wildfly_checksum: sha256:{{ lookup('ansible.builtin.url',
+      'https://repo1.maven.org/maven2/org/wildfly/wildfly-dist/{{
+      wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz.sha256',
+      split_lines=False, errors='ignore') | default('', true) }}
+    wildfly_bind_address: 20.51.169.27
+    wildfly_http_port: 8080
+    wildfly_https_port: 8443
+    wildfly_mgmt_port: 9990
+    open_firewall: true
+    configure_selinux: true
+    create_mgmt_user: true
+    mgmt_username: "admin" 
+    mgmt_passwd: "ChangeMe!123"
+    mgmt_password: "ChangeMe!123"
+  become: yes    
+  pre_tasks:
+    - name: Install iproute2 package
+      package:
+        name: "{{ (ansible_facts['distribution_major_version'] | int < 8) | ternary('iproute', 'iproute2') }}"
+        state: present
+
+    - name: Ensure required packages are installed (RHEL/Debian families)
+      package:
+        name: "{{ item }}"
+        state: present
+      loop: >-
+        {{
+          (ansible_os_family == 'RedHat') |
+          ternary(['java-11-openjdk-headless','tar','unzip','gzip','policycoreutils-python-utils'],
+                  ['openjdk-17-jre-headless','tar','unzip','gzip','policycoreutils-python-utils'])
+        }}
+      ignore_errors: true
+    - name: Ensure firewalld installed on RHEL-family when requested
+      package:
+        name: firewalld
+        state: present
+      when: open_firewall and ansible_os_family == 'RedHat'
+    - name: Start and enable firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: true
+      when: open_firewall and ansible_os_family == 'RedHat'
+        #  roles:
+        #   - wildfly_install
+        #   - wildfly_systemd
+        #  become: yes
+  tasks:
+    #- name: enable and start firewalld service
+    #  systemd:
+    #    name: firewalld
+    #    state: started
+    #    enabled: yes
+    #    - name: permit traffic in default zone on port 22/tcp
+    #  ansible.posix.authorized_key:
+    #    port: 22/tcp
+    #    permanent: yes
+    #    state: enabled
+    #    immediate: yes
+    #    - name: Upgrade the OS (apt-get dist-upgrade)
+    #      ansible.builtin.apt:
+    #         upgrade: dist
+    #      become: yes     
+
+    #    - name: Run the equivalent of "apt-get update" as a separate step
+    #      ansible.builtin.apt:
+    #         update_cache: yes
+    #      become: yes     
+    #    - name: Install Python 3 and pip (for Debian/Ubuntu-based systems)
+    #      ansible.builtin.apt:
+    #        name:
+    #          - python3
+    #          - python3-pip
+    #          - python3-apt # Required for apt module functionality
+    #        state: present
+    #        update_cache: true
+    #      become: yes    
+    #      when: ansible_os_family == "Debian"
+    #    - name: Ensure iproute2 package is installed
+    #      ansible.builtin.package:
+    #        name: iproute2
+    #        state: present
+    #        update_cache: yes
+    #      become: true # Use 'become: true' to ensure elevated privileges 
+    #    - name: Install Python 3 and pip (for RedHat/CentOS/Fedora-based systems)
+    #      ansible.builtin.dnf:
+    #        name:
+    #          - python3
+    #          - python3-pip
+    #        state: present
+    #      become: yes    
+    #      when: ansible_os_family == "RedHat"
+     
+    #    - name: is_wfly_home
+    #      ansible.builtin.file:
+    #        path: /opt/wildfly/wildfly-31.0.1.Final
+    #        state: directory
+    #        mode: "0755"
+    #        owner: dhananjay
+    #        remote_src: true  
+    #      become: true
+
+
+    #    - name: is_wfly_home.state 
+    #      ansible.builtin.file:
+    #        path: /opt/wildfly/wildfly-31.0.1.Final
+    #        state: true
+    #        mode: "0755"
+    #        owner: dhananjay
+
+    #    - name: is_wfly_home.state exists
+    #      ansible.builtin.file:
+    #        path: /opt/wildfly/wildfly-31.0.1.Final
+    #        state: true
+    #        mode: "0755"
+    #        owner: dhananjay    
+ 
+    - name: Create application group
+      group:
+        name: "{{ wildfly_group }}"
+        system: true
+
+    - name: Create application user
+      user:
+        name: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+        system: true
+          #        remote_src: true  
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: Create install dir
+      file:
+        path: "{{ wildfly_install_dir }}"
+        state: directory
+    - name: Download WildFly archive
+      get_url:
+        url: "{{ wildfly_archive_url }}"
+        dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        mode: "0755"
+          ###        checksum: "{{ (wildfly_checksum | length) > 0 | ternary(wildfly_checksum, omit) }}"
+
+    - name: Extract WildFly
+      unarchive:
+        src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        dest: "{{ wildfly_install_dir }}"
+        remote_src: true
+        creates: "{{ wildfly_home }}"
+        mode: "0755"
+      notify: fix perms
+
+
+#   - name: Create install dir
+#     file:
+#       path: "{{ wildfly_install_dir }}"
+#       state: directory
+#       owner: "{{ wildfly_user }}"
+#       group: "{{ wildfly_group }}"
+#       mode: "0755"
+          #        remote_src: true  
+
+
+
+
+
+
+        #    - name: Download WildFly archive
+        #      get_url:
+        #        url: "{{ wildfly_archive_url }}"
+        #        dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        #        mode: "0755"
+          #        checksum: "{{(wildfly_checksum)!=null }}"
+          #        force: true
+          #        remote_src: true
+          #        selevel: s0
+          #        serole: object_r
+          #        setype: usr_t
+          #        seuser: dhananjay
+          #      become: true
+          #      become_method: sudo
+          #      notify: fix perms
+
+  
+      
+        #    - name: Extract WildFly
+        #      unarchive:
+        #        src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        #        dest: "/opt/wildfly/"         
+        #        remote_src: true
+          #        force: true 
+          #        selevel: s0
+          #        serole: object_r
+          #        setype: usr_t
+          #        seuser: dhananjay            
+          #        sepasswd: Dhanuki@1234  
+          #        creates: "{{ wildfly_home }}"    
+          #        state: directory
+          #        owner: "{{wildfly_user}}"
+          #        group: "{{wildfly_group}}"  
+          #        mode: '0755'  
+          #      become: true    
+          #      become_method: ansible.builtin.sudo
+          #      notify: fix perms
+
+        #    - name: "Deploy configuration"
+        #      copy:
+        #        src: "{{wildfly_home}}"
+        #        dest: "{{wildfly_home}}"
+        #        group: "{{ wildfly_group }}"
+        #        owner: "{{ wildfly_user }}"
+        #        mode: '0755'
+        #        remote_src: true
+        #        force: true
+        #        selevel: s0
+        #        serole: object_r
+        #        setype: usr_t
+        #        seuser: dhananjay
+        #      become: true  
+        #      become_method: sudo
+        #      notify: fix perms
+
+    - name: Create stable symlink
+      file:
+        src: "{{ wildfly_home }}"
+        dest: "{{ wildfly_symlink }}"
+        state: link
+        force: true
+        mode: "0755"  
+
+    - name: Create WildFly config dirs
+      file:
+        path: "{{ wildfly_symlink }}/{{ item }}"
+        state: directory
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+        mode: "0755"
+      loop:
+        - standalone
+        - standalone/configuration
+        - logs
+
+    - name: Install systemd unit
+      copy:
+        dest: /etc/systemd/system/{{ wildfly_service_name }}.service
+        content: |
+          [Unit]
+          Description=WildFly Application Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ wildfly_user }}
+          Group={{ wildfly_group }}
+          ExecStart={{ wildfly_symlink }}/bin/standalone.sh -b {{ wildfly_bind_address }} -bmanagement {{ wildfly_bind_address }} -Djboss.http.port={{ wildfly_http_port }} -Djboss.management.http.port={{ wildfly_mgmt_port }}
+          ExecStop=/bin/kill -TERM $MAINPID
+          Environment=JBOSS_HOME={{ wildfly_symlink }}
+          Restart=on-failure
+          LimitNOFILE=65535
+          TimeoutStartSec=60
+          TimeoutStopSec=60
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - systemd daemon-reload
+        - restart wildfly
+
+          #    - name: Open firewall ports (RHEL-family)
+          #      firewalld:
+          #        port: "{{ item }}/tcp"
+          #        permanent: true
+          #        state: enabled
+          #        immediate: true
+          #      loop:
+          #        - "{{ wildfly_http_port }}"
+          #        - "{{ wildfly_mgmt_port }}"
+          #        - "{{ wildfly_https_port }}"
+          #      when: open_firewall and ansible_os_family == 'RedHat'
+
+          #    - name: Allow ports via UFW (Debian-family)
+          #      ufw:
+          #        rule: allow
+          #        port: "{{ item }}"
+          #        proto: tcp
+          #      loop:
+          #        - "{{ wildfly_http_port }}"
+          #        - "{{ wildfly_mgmt_port }}"
+          #        - "{{ wildfly_https_port }}"
+          #      when: open_firewall and ansible_os_family == 'Debian'
+
+          #    - name: Configure SELinux port contexts (RHEL-family)
+          #      sefcontext:
+          #        target: "tcp:{{ item }}"
+          #        setype: http_port_t
+          #        state: present
+          #      loop:
+          #        - "{{ wildfly_http_port }}"
+          #        - "{{ wildfly_mgmt_port }}"
+          #        - "{{ wildfly_https_port }}"
+          #      when: configure_selinux and ansible_os_family == 'ubuntu'
+          #      ignore_errors: true
+
+    - name: Apply SELinux contexts
+      command: "semanage port -a -t http_port_t -p tcp {{ item }}"
+      register: semanage_result
+      changed_when: semanage_result.rc == 0
+      failed_when: false
+      loop:
+        - "{{ wildfly_http_port }}"
+        - "{{ wildfly_mgmt_port }}"
+        - "{{ wildfly_https_port }}"
+      when: configure_selinux and ansible_os_family == 'RedHat'
+
+    - name: Enable and start service
+      service:
+        name: "{{ wildfly_service_name }}"
+        enabled: true
+        state: started
+
+    - name: Create management user (if requested)
+      command: >
+        {{ wildfly_symlink }}/bin/add-user.sh
+        -u {{ mgmt_username }}
+        -p {{ mgmt_password }}
+        -g "admin"
+        -s "ChangeMe!123"
+      args:
+        creates: "{{ wildfly_symlink }}/standalone/configuration/mgmt-users.properties"
+      when: create_mgmt_user
+      notify: restart wildfly
+
+  handlers:
+    - name: systemd daemon-reload
+      systemd:
+        daemon_reload: true
+
+    - name: restart wildfly
+      service:
+        name: "{{ wildfly_service_name }}"
+        state: restarted
+
+    - name: fix perms
+      file:
+        path: "{{ wildfly_symlink }}"
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+        recurse: true
+
+          

@@ -1,0 +1,34 @@
+---
+- name: "Ensure required parameters are provided."
+  ansible.builtin.assert:
+    that:
+      - target_wildfly_home is defined
+      - previous_wildfly_home is defined
+    quiet: True
+    fail_msg: "Missing required parameters."
+
+- name: "Ensure that the required JVM has been installed on target: {{ wildfly_migration_jdk_package_name }}"
+  become: "{{ wildfly_migration_jdk_package_install_requires_privileges_escalation | default('yes') }}"
+  become_user: "{{ wildfly_migration_jdk_package_install_requires_privileges_escalation_user | default('root') }}"
+  ansible.builtin.dnf:
+    name: "{{ wildfly_migration_jdk_package_name }}"
+    state: present
+
+- name: "Ensure Server Migration Tool is installed on target if EAP8 is the target"
+  ansible.builtin.include_tasks: install/rhn.yml
+  when:
+    - eap_enable is defined and eap_enable
+    - eap_version is defined and eap_version == '8.0.0'
+
+- name: "Escalate privileges if required"
+  become: "{{ wildfly_migration_require_privileges_escalation | default('true') }}"
+  block:
+
+    - name: "Ensure that the Migration Toolkit configuration have been updated to include: {{ wildfly_migration_config_files }}"
+      ansible.builtin.template:
+        src: "{{ wildfly_migration_tool_configuration_template }}"
+        dest: "{{ wildfly_migration_path_to_env_properties }}"
+        mode: "0644"
+
+    - name: "Run migration tool"
+      ansible.builtin.include_tasks: run_server_migration.yml

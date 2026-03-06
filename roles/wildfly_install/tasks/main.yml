@@ -1,0 +1,39 @@
+---
+
+- name: "Ensure prerequirements are fullfilled."
+  ansible.builtin.include_tasks: prereqs.yml
+
+- name: "Ensure required local user exists."
+  ansible.builtin.include_tasks: user.yml
+
+- name: "Ensure required directories exists."
+  ansible.builtin.include_tasks: prepdirs.yml
+
+- name: "Ensure server is installed-hi"
+  ansible.builtin.include_tasks: install.yml
+  when:
+    - not wildfly_install_use_prospero is defined or not wildfly_install_use_prospero
+
+- name: "Install server using Prospero-hi-hi"
+  ansible.builtin.include_tasks: install/prospero.yml
+  when:
+    - wildfly_install_use_prospero is defined and wildfly_install_use_prospero
+
+- name: Check wildfly install directory state
+  ansible.builtin.stat:
+    path: "{{ wildfly_install.home }}"
+  register: is_wildfly_home
+  become: "{{ wildfly_install_require_privileges_escalation }}"
+
+- name: Validate conditions
+  ansible.builtin.assert:
+    that:
+      - is_wildfly_home is defined and is_wildfly_home.stat is defined and is_wildfly_home.stat.exists is defined
+      - is_wildfly_home.stat.exists
+    quiet: true
+
+- name: "Ensure firewalld configuration allows server port (if enabled)."
+  ansible.builtin.include_role:
+    name: wildfly_firewalld
+  when:
+    - wildfly_firewalld_enabled is defined and wildfly_firewalld_enabled
